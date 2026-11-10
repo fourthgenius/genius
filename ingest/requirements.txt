@@ -1,0 +1,6 @@
+requests>=2.32
+beautifulsoup4>=4.12
+lxml>=5.2
+thefuzz>=0.22
+supabase>=2.9
+python-dotenv>=1.0
