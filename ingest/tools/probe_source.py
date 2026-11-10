@@ -23,13 +23,22 @@ UA = "GenieUsBot/0.1 (+free community event discovery; non-commercial)"
 OUT = Path(__file__).parent / "probe_out"
 
 
-def allowed(url: str) -> bool:
+def allowed(url: str) -> bool | None:
+    """True/False from robots.txt; None if robots.txt itself is blocked (401/403).
+
+    Fetched with our own user agent: urllib's default agent is often blocked,
+    and RobotFileParser.read() treats any 403 as "disallow everything".
+    """
     p = urlparse(url)
-    rp = RobotFileParser(f"{p.scheme}://{p.netloc}/robots.txt")
-    try:
-        rp.read()
-    except Exception:
-        return True
+    robots_url = f"{p.scheme}://{p.netloc}/robots.txt"
+    resp = requests.get(robots_url, headers={"User-Agent": UA}, timeout=15)
+    print(f"robots.txt status={resp.status_code}")
+    if resp.status_code in (401, 403):
+        return None
+    if resp.status_code != 200:
+        return True  # no robots.txt => nothing disallowed
+    rp = RobotFileParser()
+    rp.parse(resp.text.splitlines())
     return rp.can_fetch(UA, url)
 
 
@@ -52,7 +61,11 @@ def count_events(node, hits=None):
 
 def probe(url: str) -> None:
     print(f"\n=== {url}")
-    if not allowed(url):
+    ok = allowed(url)
+    if ok is None:
+        print("robots.txt is blocked for our user agent (likely bot protection); skipping")
+        return
+    if not ok:
         print("robots.txt DISALLOWS this URL; skipping")
         return
     r = requests.get(url, headers={"User-Agent": UA}, timeout=25)

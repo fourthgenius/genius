@@ -24,17 +24,23 @@ class Source(ABC):
         self._last_request = 0.0
 
     def _allowed(self, url: str) -> bool:
+        """robots.txt check using our own user agent.
+
+        RobotFileParser.read() uses urllib's default agent and treats any 403 as
+        "disallow all", which wrongly blocks sites that merely reject that agent.
+        A 401/403 on robots.txt for *our* agent means bot protection: we skip.
+        """
         parts = urlparse(url)
         origin = f"{parts.scheme}://{parts.netloc}"
         if origin not in self._robots:
             rp = RobotFileParser()
-            rp.set_url(f"{origin}/robots.txt")
-            try:
-                rp.read()
-            except Exception:
-                # robots.txt unreachable: be conservative and treat as allowed
-                # only for the homepage-level politeness; scrapers may override.
-                rp.allow_all = True
+            resp = self.session.get(f"{origin}/robots.txt", timeout=REQUEST_TIMEOUT_SECONDS)
+            if resp.status_code in (401, 403):
+                rp.disallow_all = True
+            elif resp.status_code == 200:
+                rp.parse(resp.text.splitlines())
+            else:
+                rp.allow_all = True  # no robots.txt => nothing disallowed
             self._robots[origin] = rp
         return self._robots[origin].can_fetch(USER_AGENT, url)
 
